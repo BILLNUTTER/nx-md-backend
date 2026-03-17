@@ -1,7 +1,6 @@
-import "dotenv/config"; // <-- load .env variables
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { serveStatic } from "./static";
 import { createServer } from "http";
 import { connectDB } from "./db";
 import { reconnectAllSessions, checkExpiredSubscriptions } from "./whatsapp";
@@ -26,7 +25,7 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
-// Simple logger function
+// Logger
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -38,11 +37,11 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
-// Middleware to log API requests with response
+// Request logger middleware
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+  let capturedJsonResponse: Record<string, any> | undefined;
 
   const originalResJson = res.json;
   res.json = function (bodyJson, ...args) {
@@ -52,8 +51,10 @@ app.use((req, res, next) => {
 
   res.on("finish", () => {
     const duration = Date.now() - start;
+
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+
       if (capturedJsonResponse && !path.startsWith("/api/auth")) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
@@ -66,52 +67,49 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Connect to MongoDB using MONGODB_URI from .env
-  await connectDB();
+  try {
+    // Connect DB
+    await connectDB();
+    log("Connected to MongoDB", "db");
 
-  // Register your routes
-  await registerRoutes(httpServer, app);
+    // Routes
+    await registerRoutes(httpServer, app);
 
-  // Error handling middleware
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    // Error handler
+    app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
 
-    console.error("Internal Server Error:", err);
+      console.error("Internal Server Error:", err);
 
-    if (res.headersSent) {
-      return next(err);
-    }
+      if (res.headersSent) return next(err);
 
-    return res.status(status).json({ message });
-  });
+      res.status(status).json({ message });
+    });
 
-  // Serve static files in production, Vite dev server in development
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
-  } else {
-    const { setupVite } = await import("./vite");
-    await setupVite(httpServer, app);
+    // 🚀 START SERVER (NO FRONTEND SERVING)
+    const port = parseInt(process.env.PORT || "5000", 10);
+
+    httpServer.listen(
+      {
+        port,
+        host: "0.0.0.0",
+      },
+      () => {
+        log(`Server running on port ${port}`);
+      },
+    );
+
+    // WhatsApp reconnect
+    setTimeout(() => {
+      reconnectAllSessions();
+    }, 5000);
+
+    // Subscription check
+    setInterval(checkExpiredSubscriptions, 60 * 60 * 1000);
+
+  } catch (err) {
+    console.error("Startup error:", err);
+    process.exit(1);
   }
-
-  // Use PORT from .env or fallback to 5000
-  const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`Server running on port ${port}`);
-    },
-  );
-
-  // Reconnect WhatsApp sessions after 5s
-  setTimeout(() => {
-    reconnectAllSessions();
-  }, 5000);
-
-  // Check expired subscriptions every hour
-  setInterval(checkExpiredSubscriptions, 60 * 60 * 1000);
 })();
