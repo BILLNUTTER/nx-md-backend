@@ -14,7 +14,12 @@ import QRCode from "qrcode";
 import { handleCommand } from "./commands/index";
 import { getSetting, DEFAULT_BOT_SETTINGS } from "./commands/types";
 
-const baileysLogger = pino({ level: "silent" });
+process.env.PINO_LOG_LEVEL = "silent";
+
+const baileysLogger = pino({
+  level: "silent",
+  enabled: false, // 🔥 HARD disable ALL logs
+});
 
 const activeSessions = new Map<string, any>();
 const qrCodes = new Map<string, string>();
@@ -132,19 +137,19 @@ export async function startWhatsAppSession(userId: string, usePairingCode?: bool
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
-      version,
-      logger: baileysLogger,
-      auth: {
-        creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
-      },
-      printQRInTerminal: false,
-      generateHighQualityLinkPreview: !usePairingCode,
-      syncFullHistory: false,
-      browser: usePairingCode
-        ? ["Ubuntu", "Chrome", "22.0.0.0"]
-        : ["NX-MD BOT", "Chrome", "4.0.0"],
-    });
+  version,
+  logger: silentLogger, // Silence all Baileys logs
+  auth: {
+    creds: state.creds,
+    keys: makeCacheableSignalKeyStore(state.keys, silentLogger), // Silence key operations
+  },
+  printQRInTerminal: false,
+  generateHighQualityLinkPreview: !usePairingCode,
+  syncFullHistory: false,
+  browser: usePairingCode
+    ? ["Ubuntu", "Chrome", "22.0.0.0"]
+    : ["NX-MD BOT", "Chrome", "4.0.0"],
+});
 
     if (usePairingCode && phoneNumber && !state.creds.registered) {
       const cleanNumber = phoneNumber.replace(/[^0-9]/g, "");
