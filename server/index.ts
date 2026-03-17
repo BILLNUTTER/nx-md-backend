@@ -4,17 +4,22 @@ import { registerRoutes } from "./routes";
 import { createServer } from "http";
 import { connectDB } from "./db";
 import { reconnectAllSessions, checkExpiredSubscriptions } from "./whatsapp";
+import pino from "pino";
 
 const app = express();
 const httpServer = createServer(app);
 
+// --- SILENT LOGGER FOR WHATSAPP (BAILEYS) ---
+export const silentLogger = pino({ level: "silent", enabled: false });
+
+// --- HTTP module augmentation to store rawBody ---
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
   }
 }
 
-// Parse JSON and capture raw body
+// --- Parse JSON and capture raw body ---
 app.use(
   express.json({
     verify: (req, _res, buf) => {
@@ -25,7 +30,7 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
-// Logger
+// --- Simple Express logger ---
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -37,7 +42,7 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
-// Request logger middleware
+// --- Request logging middleware ---
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -51,14 +56,11 @@ app.use((req, res, next) => {
 
   res.on("finish", () => {
     const duration = Date.now() - start;
-
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-
       if (capturedJsonResponse && !path.startsWith("/api/auth")) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
-
       log(logLine);
     }
   });
@@ -66,16 +68,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// --- Main async bootstrap ---
 (async () => {
   try {
-    // Connect DB
+    // Connect to MongoDB
     await connectDB();
     log("Connected to MongoDB", "db");
 
-    // Routes
+    // Register routes
     await registerRoutes(httpServer, app);
 
-    // Error handler
+    // Express error handler
     app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
@@ -87,7 +90,7 @@ app.use((req, res, next) => {
       res.status(status).json({ message });
     });
 
-    // 🚀 START SERVER (NO FRONTEND SERVING)
+    // --- START SERVER ---
     const port = parseInt(process.env.PORT || "5000", 10);
 
     httpServer.listen(
@@ -100,12 +103,12 @@ app.use((req, res, next) => {
       },
     );
 
-    // WhatsApp reconnect
+    // --- Reconnect WhatsApp sessions after 5s ---
     setTimeout(() => {
       reconnectAllSessions();
     }, 5000);
 
-    // Subscription check
+    // --- Check expired subscriptions every hour ---
     setInterval(checkExpiredSubscriptions, 60 * 60 * 1000);
 
   } catch (err) {
