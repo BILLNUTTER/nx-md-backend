@@ -13,7 +13,7 @@ import { log } from "./index";
 import QRCode from "qrcode";
 import { handleCommand } from "./commands/index";
 import { getSetting, DEFAULT_BOT_SETTINGS } from "./commands/types";
-import { silentLogger } from "./index";
+import { silentLogger } from "./logger";
 
 process.env.PINO_LOG_LEVEL = "silent";
 
