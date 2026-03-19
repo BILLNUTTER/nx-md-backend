@@ -9,6 +9,23 @@ import pino from "pino";
 const app = express();
 const httpServer = createServer(app);
 
+// --- CORS setup (allow frontend requests) ---
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.header("Access-Control-Allow-Origin", "*"); // allow all domains
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+
+  // Handle preflight OPTIONS request
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+});
+
 // --- SILENT LOGGER FOR WHATSAPP (BAILEYS) ---
 export const silentLogger = pino({ level: "silent", enabled: false });
 
